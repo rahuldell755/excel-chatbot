@@ -1,100 +1,83 @@
 import streamlit as st
 import pandas as pd
+import os
 
-# Load Excel
+# ---------------- LOAD DATA ----------------
 df = pd.read_excel("install_base.xlsx")
-
-# Normalize data
 df = df.fillna("").astype(str)
 df.columns = df.columns.str.strip().str.lower()
 
+# ---------------- PAGE SETUP ----------------
 st.set_page_config(page_title="Install Base Chatbot", layout="wide")
-st.title("📊 Install Base Chatbot")
+st.title("📊 Install Base Intelligence Bot")
 
-query = st.chat_input(
-    "Ask like: Consulting contact for Mashreq, Products used by Bandhan Bank, Africa Flexcube clients..."
+# ---------------- SIDEBAR FILTERS ----------------
+st.sidebar.header("🔍 Filters")
+
+region = st.sidebar.selectbox(
+    "Region",
+    ["All"] + sorted(df["regioncode"].unique())
 )
 
+country = st.sidebar.selectbox(
+    "Country",
+    ["All"] + sorted(df["country"].unique())
+)
+
+deployment = st.sidebar.selectbox(
+    "Deployment Type",
+    ["All"] + sorted(df["deployment type"].unique())
+)
+
+product = st.sidebar.selectbox(
+    "Product",
+    ["All"] + sorted(
+        {p.strip() for x in df["products used"] for p in x.split(",")}
+    )
+)
+
+# Apply filters
+filtered_df = df.copy()
+
+if region != "All":
+    filtered_df = filtered_df[filtered_df["regioncode"] == region]
+
+if country != "All":
+    filtered_df = filtered_df[filtered_df["country"] == country]
+
+if deployment != "All":
+    filtered_df = filtered_df[filtered_df["deployment type"] == deployment]
+
+if product != "All":
+    filtered_df = filtered_df[
+        filtered_df["products used"].str.contains(product, case=False)
+    ]
+
+# ---------------- CHAT INPUT ----------------
+query = st.chat_input(
+    "Ask: How many Flexcube clients in Africa? Consulting contact for Mashreq?"
+)
+
+# ---------------- HELPER ----------------
+def find_client(text):
+    for c in df["client name"].unique():
+        if c.lower() in text:
+            return c
+    return None
+
+# ---------------- CHAT LOGIC ----------------
 if query:
     st.chat_message("user").write(query)
-    q = query.lower().strip()
+    q = query.lower()
 
     response = ""
     result_df = pd.DataFrame()
+    client = find_client(q)
 
-    # Helper: find client name in query
-    def find_client():
-        for c in df["client name"].unique():
-            if c.lower() in q:
-                return c
-        return None
+    # ---- HOW MANY QUESTIONS ----
+    if "how many" in q or "count" in q:
+        count = len(filtered_df)
+        response = f"I found **{count} client(s)** matching your criteria."
+        result_df = filtered_df
 
-    client = find_client()
-
-    # --- Intent: Consulting Contact ---
-    if "consulting" in q or "consultant" in q:
-        if client:
-            contact = df[df["client name"] == client]["consulting contact"].iloc[0]
-            response = f"The consulting contact for **{client}** is **{contact}**."
-
-    # --- Intent: GSUP Contact ---
-    elif "gsup" in q or "support" in q:
-        if client:
-            contact = df[df["client name"] == client]["gsup contact"].iloc[0]
-            response = f"The GSUP contact for **{client}** is **{contact}**."
-
-    # --- Intent: Products Used ---
-    elif "product" in q or "flexcube" in q:
-        if client:
-            products = df[df["client name"] == client]["products used"].iloc[0]
-            response = f"**{client}** is using **{products}**."
-        else:
-            result_df = df[df["products used"].str.lower().str.contains(q)]
-            if not result_df.empty:
-                response = f"I found **{len(result_df)} client(s)** using this product."
-
-    # --- Intent: Deployment Type ---
-    elif "deployment" in q or "cloud" in q or "oci" in q or "aws" in q:
-        if client:
-            deploy = df[df["client name"] == client]["deployment type"].iloc[0]
-            response = f"**{client}** is deployed on **{deploy}**."
-
-    # --- Intent: Status ---
-    elif "status" in q or "live" in q:
-        if client:
-            curr = df[df["client name"] == client]["current status"].iloc[0]
-            impl = df[df["client name"] == client]["impl status"].iloc[0]
-            response = (
-                f"**{client}** current status is **{curr}**, "
-                f"and implementation status is **{impl}**."
-            )
-
-    # --- Intent: Implementation Date ---
-    elif "impl date" in q or "implementation date" in q or "go live" in q:
-        if client:
-            date = df[df["client name"] == client]["impl date"].iloc[0]
-            response = f"**{client}** implementation date is **{date}**."
-
-    # --- Intent: Region / Country ---
-    elif "region" in q or "country" in q or "africa" in q or "europe" in q:
-        result_df = df[df.apply(lambda r: q in " ".join(r).lower(), axis=1)]
-        if not result_df.empty:
-            response = f"I found **{len(result_df)} matching client(s)**."
-
-    # --- Fallback Search ---
-    else:
-        result_df = df[df.apply(lambda r: q in " ".join(r).lower(), axis=1)]
-        if not result_df.empty:
-            response = f"I found **{len(result_df)} matching record(s)**."
-
-    # --- Output ---
-    if response:
-        st.chat_message("assistant").write(response)
-
-    if not result_df.empty:
-        st.dataframe(result_df)
-
-    if not response and result_df.empty:
-        st.chat_message("assistant").write(
-            "I couldn’t find an exact match. Try using client name, product, region, or contact."
-        )
+    # ---- CONSULTING CONTACT

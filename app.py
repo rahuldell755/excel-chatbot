@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-df = pd.read_excel("data/install_base.xlsx")
+df = pd.read_excel("install_base.xlsx")
 
 st.set_page_config(page_title="Install Base Chatbot", layout="wide")
 st.title("📊 Install Base Chatbot")

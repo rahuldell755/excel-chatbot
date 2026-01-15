@@ -85,8 +85,54 @@ if query:
                     f"**{row['current status'].iloc[0]}**, "
                     f"implementation status is **{row['impl status'].iloc[0]}**."
                 )
+            elif intent == "product":
+                products = row["products used"].unique()
+                response = f"**{client} ({country})** is using the following products: {', '.join(products)}."
+            elif intent == "deployment":
+                deployments = row["deployment type"].unique()
+                response = f"**{client} ({country})** deployment types: {', '.join(deployments)}."
         st.session_state.pending_client = None
         st.session_state.pending_intent = None
+
+    # ---------- ATTRIBUTE / PRODUCT LOOKUP ----------
+    elif client and any(k in q for k in ["product","products","deployment","consulting","gsup","support","status"]):
+        rows = df[df["client name"] == client]
+        if country:
+            rows = rows[rows["country"].str.lower() == country.lower()]
+
+        if "product" in q or "products" in q:
+            products = rows["products used"].unique()
+            response = f"**{client}** is using the following products: {', '.join(products)}."
+        elif "deployment" in q:
+            deployments = rows["deployment type"].unique()
+            response = f"**{client}** deployment types: {', '.join(deployments)}."
+        elif "consulting" in q:
+            if len(rows["country"].unique()) > 1 and not country:
+                st.session_state.pending_client = client
+                st.session_state.pending_intent = "consulting"
+                response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
+            else:
+                consulting = rows["consulting contact"].unique()
+                response = f"**{client}** consulting contact(s): {', '.join(consulting)}."
+        elif "gsup" in q or "support" in q:
+            if len(rows["country"].unique()) > 1 and not country:
+                st.session_state.pending_client = client
+                st.session_state.pending_intent = "gsup"
+                response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
+            else:
+                gsup = rows["gsup contact"].unique()
+                response = f"**{client}** GSUP contact(s): {', '.join(gsup)}."
+        elif "status" in q:
+            if len(rows["country"].unique()) > 1 and not country:
+                st.session_state.pending_client = client
+                st.session_state.pending_intent = "status"
+                response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
+            else:
+                row = rows.iloc[0]
+                response = (
+                    f"**{client} ({row['country']})** current status is "
+                    f"**{row['current status']}**, implementation status is **{row['impl status']}**."
+                )
 
     # ---------- HOW MANY / COUNT ----------
     elif "how many" in q or "count" in q:
@@ -104,47 +150,6 @@ if query:
             st.session_state.last_count_result = temp_df
             st.session_state.last_list_type = "client"
 
-    # ---------- CONSULTING CONTACT ----------
-    elif "consulting" in q and client:
-        rows = df[df["client name"] == client]
-        countries = rows["country"].unique()
-        if len(countries) > 1 and not country:
-            st.session_state.pending_client = client
-            st.session_state.pending_intent = "consulting"
-            response = f"**{client}** exists in multiple countries: {', '.join(countries)}. Please specify the country."
-        else:
-            country = country or countries[0]
-            response = f"The consulting contact for **{client} ({country})** is **{rows[rows['country']==country]['consulting contact'].iloc[0]}**."
-
-    # ---------- GSUP CONTACT ----------
-    elif ("gsup" in q or "support" in q) and client:
-        rows = df[df["client name"] == client]
-        countries = rows["country"].unique()
-        if len(countries) > 1 and not country:
-            st.session_state.pending_client = client
-            st.session_state.pending_intent = "gsup"
-            response = f"**{client}** exists in multiple countries: {', '.join(countries)}. Please specify the country."
-        else:
-            country = country or countries[0]
-            response = f"The GSUP contact for **{client} ({country})** is **{rows[rows['country']==country]['gsup contact'].iloc[0]}**."
-
-    # ---------- STATUS ----------
-    elif "status" in q and client:
-        rows = df[df["client name"] == client]
-        countries = rows["country"].unique()
-        if len(countries) > 1 and not country:
-            st.session_state.pending_client = client
-            st.session_state.pending_intent = "status"
-            response = f"**{client}** exists in multiple countries: {', '.join(countries)}. Please specify the country."
-        else:
-            country = country or countries[0]
-            row = rows[rows["country"] == country]
-            response = (
-                f"**{client} ({country})** current status is "
-                f"**{row['current status'].iloc[0]}**, "
-                f"implementation status is **{row['impl status'].iloc[0]}**."
-            )
-
     # ---------- FALLBACK ----------
     else:
         temp_df = apply_filters(q, df)
@@ -155,6 +160,8 @@ if query:
             )
             st.session_state.last_count_result = temp_df
             st.session_state.last_list_type = "client"
+        else:
+            response = "I couldn't find any matching records. Try client, customer, country, product, or deployment."
 
     # ================= OUTPUT =================
     if response:

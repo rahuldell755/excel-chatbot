@@ -20,6 +20,8 @@ if "awaiting_list_confirmation" not in st.session_state:
     st.session_state.awaiting_list_confirmation = False
 if "last_list_type" not in st.session_state:
     st.session_state.last_list_type = None  # "customer" or "client"
+if "show_sites_clicked" not in st.session_state:
+    st.session_state.show_sites_clicked = False
 
 # ================= HELPERS =================
 def find_client(text):
@@ -68,19 +70,10 @@ if query:
     # ---------- Handle Yes/No Follow-up ----------
     if st.session_state.awaiting_list_confirmation:
         if q in ["yes","y"]:
-            # Show previous result
-            if st.session_state.last_count_result is not None:
-                result_df = st.session_state.last_count_result
-                st.chat_message("assistant").write(
-                    f"Here is the list of {st.session_state.last_list_type}s:"
-                )
-                st.dataframe(result_df)
+            st.session_state.show_sites_clicked = True
         else:
             st.chat_message("assistant").write("Okay, not showing the list.")
         st.session_state.awaiting_list_confirmation = False
-        st.session_state.last_count_result = None
-        st.session_state.last_list_type = None
-        query = ""  # End this turn
     else:
         # ---------- FOLLOW-UP COUNTRY (for client contacts) ----------
         client = find_client(q)
@@ -171,8 +164,7 @@ if query:
             if not temp_df.empty:
                 response = (
                     f"I found **{temp_df['client name'].nunique()} unique customer(s)** "
-                    f"and **{len(temp_df)} client site(s)** matching your criteria. "
-                    "You can ask for a list if you want."
+                    f"and **{len(temp_df)} client site(s)** matching your criteria."
                 )
                 st.session_state.last_count_result = temp_df
                 st.session_state.awaiting_list_confirmation = True
@@ -182,10 +174,16 @@ if query:
     if response:
         st.chat_message("assistant").write(response)
 
-    if not result_df.empty:
-        st.dataframe(result_df)
-
-    if not response and not st.session_state.awaiting_list_confirmation:
-        st.chat_message("assistant").write(
-            "I couldn’t find an exact match. Try customer, client, country, region, or product."
-        )
+    # ---------- SHOW SITES BUTTON ----------
+    if st.session_state.awaiting_list_confirmation:
+        if st.session_state.last_count_result is not None:
+            if st.button(f"Show {st.session_state.last_list_type} list"):
+                show_df = st.session_state.last_count_result.copy()
+                if st.session_state.last_list_type == "client":
+                    show_df = show_df[["client name","country","regioncode"]]
+                elif st.session_state.last_list_type == "customer":
+                    show_df = show_df[["client name"]].drop_duplicates()
+                st.dataframe(show_df)
+                st.session_state.awaiting_list_confirmation = False
+                st.session_state.last_count_result = None
+                st.session_state.last_list_type = None

@@ -66,116 +66,45 @@ if query:
     client = find_client(q)
     country = find_country(q)
 
-    # ---------- FOLLOW-UP COUNTRY (for client contacts) ----------
-    if st.session_state.pending_client and country:
-        client = st.session_state.pending_client
-        intent = st.session_state.pending_intent
-        row = df[
-            (df["client name"] == client) &
-            (df["country"].str.lower() == country.lower())
-        ]
-        if not row.empty:
-            if intent == "consulting":
-                response = f"The consulting contact for **{client} ({country})** is **{row['consulting contact'].iloc[0]}**."
-            elif intent == "gsup":
-                response = f"The GSUP contact for **{client} ({country})** is **{row['gsup contact'].iloc[0]}**."
-            elif intent == "status":
-                response = (
-                    f"**{client} ({country})** current status is "
-                    f"**{row['current status'].iloc[0]}**, "
-                    f"implementation status is **{row['impl status'].iloc[0]}**."
-                )
-            elif intent == "product":
-                products = row["products used"].unique()
-                response = f"**{client} ({country})** is using the following products: {', '.join(products)}."
-            elif intent == "deployment":
-                deployments = row["deployment type"].unique()
-                response = f"**{client} ({country})** deployment types: {', '.join(deployments)}."
-        st.session_state.pending_client = None
-        st.session_state.pending_intent = None
+    # ---------- VALIDATION ----------
+    valid_clients = [c.lower() for c in df["client name"].unique()]
+    valid_countries = [c.lower() for c in df["country"].unique()]
+    valid_keywords = ["customer","client","product","products","deployment",
+                      "consulting","gsup","support","status","how many","count","region"]
 
-    # ---------- ATTRIBUTE / PRODUCT LOOKUP ----------
-    elif client and any(k in q for k in ["product","products","deployment","consulting","gsup","support","status"]):
-        rows = df[df["client name"] == client]
-        if country:
-            rows = rows[rows["country"].str.lower() == country.lower()]
+    if not any(word in q for word in valid_clients + valid_countries + valid_keywords):
+        response = "Invalid ask, please make a correct query."
 
-        if "product" in q or "products" in q:
-            products = rows["products used"].unique()
-            response = f"**{client}** is using the following products: {', '.join(products)}."
-        elif "deployment" in q:
-            deployments = rows["deployment type"].unique()
-            response = f"**{client}** deployment types: {', '.join(deployments)}."
-        elif "consulting" in q:
-            if len(rows["country"].unique()) > 1 and not country:
-                st.session_state.pending_client = client
-                st.session_state.pending_intent = "consulting"
-                response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
-            else:
-                consulting = rows["consulting contact"].unique()
-                response = f"**{client}** consulting contact(s): {', '.join(consulting)}."
-        elif "gsup" in q or "support" in q:
-            if len(rows["country"].unique()) > 1 and not country:
-                st.session_state.pending_client = client
-                st.session_state.pending_intent = "gsup"
-                response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
-            else:
-                gsup = rows["gsup contact"].unique()
-                response = f"**{client}** GSUP contact(s): {', '.join(gsup)}."
-        elif "status" in q:
-            if len(rows["country"].unique()) > 1 and not country:
-                st.session_state.pending_client = client
-                st.session_state.pending_intent = "status"
-                response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
-            else:
-                row = rows.iloc[0]
-                response = (
-                    f"**{client} ({row['country']})** current status is "
-                    f"**{row['current status']}**, implementation status is **{row['impl status']}**."
-                )
-
-    # ---------- HOW MANY / COUNT ----------
-    elif "how many" in q or "count" in q:
-        temp_df = apply_filters(q, df)
-        if temp_df.empty:
-            response = "No records found matching your criteria."
-        elif "customer" in q:
-            count = temp_df["client name"].nunique()
-            response = f"There are **{count} unique customer(s)** matching your criteria."
-            st.session_state.last_count_result = temp_df[["client name"]].drop_duplicates()
-            st.session_state.last_list_type = "customer"
-        else:  # client / site
-            count = len(temp_df)
-            response = f"There are **{count} client site(s)** matching your criteria."
-            st.session_state.last_count_result = temp_df
-            st.session_state.last_list_type = "client"
-
-    # ---------- FALLBACK ----------
     else:
-        temp_df = apply_filters(q, df)
-        if not temp_df.empty:
-            response = (
-                f"I found **{temp_df['client name'].nunique()} unique customer(s)** "
-                f"and **{len(temp_df)} client site(s)** matching your criteria."
-            )
-            st.session_state.last_count_result = temp_df
-            st.session_state.last_list_type = "client"
-        else:
-            response = "I couldn't find any matching records. Try client, customer, country, product, or deployment."
+        # ---------- FOLLOW-UP COUNTRY (for client contacts) ----------
+        if st.session_state.pending_client and country:
+            client = st.session_state.pending_client
+            intent = st.session_state.pending_intent
+            row = df[
+                (df["client name"] == client) &
+                (df["country"].str.lower() == country.lower())
+            ]
+            if not row.empty:
+                if intent == "consulting":
+                    response = f"The consulting contact for **{client} ({country})** is **{row['consulting contact'].iloc[0]}**."
+                elif intent == "gsup":
+                    response = f"The GSUP contact for **{client} ({country})** is **{row['gsup contact'].iloc[0]}**."
+                elif intent == "status":
+                    response = (
+                        f"**{client} ({country})** current status is "
+                        f"**{row['current status'].iloc[0]}**, "
+                        f"implementation status is **{row['impl status'].iloc[0]}**."
+                    )
+                elif intent == "product":
+                    products = row["products used"].unique()
+                    response = f"**{client} ({country})** is using the following products: {', '.join(products)}."
+                elif intent == "deployment":
+                    deployments = row["deployment type"].unique()
+                    response = f"**{client} ({country})** deployment types: {', '.join(deployments)}."
+            st.session_state.pending_client = None
+            st.session_state.pending_intent = None
 
-    # ================= OUTPUT =================
-    if response:
-        st.chat_message("assistant").write(response)
-
-# ---------- SHOW SITES / CUSTOMERS BUTTON ----------
-if st.session_state.last_count_result is not None:
-    show_df = st.session_state.last_count_result.copy()
-    if st.session_state.last_list_type == "client":
-        show_df = show_df[["client name","country","regioncode"]]
-    elif st.session_state.last_list_type == "customer":
-        show_df = show_df[["client name"]].drop_duplicates()
-
-    if st.button(f"Show {st.session_state.last_list_type} list"):
-        st.dataframe(show_df)
-        st.session_state.last_count_result = None
-        st.session_state.last_list_type = None
+        # ---------- ATTRIBUTE / PRODUCT LOOKUP ----------
+        elif client and any(k in q for k in ["product","products","deployment","consulting","gsup","support","status"]):
+            rows = df[df["client name"] == client]
+            if c

@@ -1,191 +1,354 @@
 import streamlit as st
-import pandas as pd
+import streamlit.components.v1 as components
 
-# ================= LOAD DATA =================
-df = pd.read_excel("install_base.xlsx")
-df = df.fillna("").astype(str)
-df.columns = df.columns.str.strip().str.lower()
+st.set_page_config(page_title="Retro Space Shooter", layout="wide")
+st.title("🕹️ Retro Space Shooter")
+st.caption("Blast enemy waves across 5 levels. Use ◀ ▶ or A/D to move, SPACE to shoot, and ENTER to restart after game over.")
 
-st.set_page_config(page_title="Install Base Chatbot", layout="wide")
-st.title("📊 Install Base Chatbot")
+components.html(
+    """
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    html, body {
+      margin: 0;
+      background: radial-gradient(circle at top, #111133 0%, #05050f 50%, #010104 100%);
+      color: #7ef9ff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+    }
+    #game-wrap {
+      width: 100vw;
+      height: 90vh;
+      position: relative;
+    }
+    #hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 2;
+      font-size: 16px;
+      line-height: 1.4;
+      text-shadow: 0 0 8px #00e5ff;
+      pointer-events: none;
+    }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 3;
+      color: #ff66c4;
+      font-size: 22px;
+      text-shadow: 0 0 12px #ff66c4;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 220ms ease;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-wrap">
+    <div id="hud">Score: 0<br/>Lives: 3<br/>Level: 1/5</div>
+    <div id="overlay"></div>
+  </div>
 
-# ================= SESSION STATE =================
-if "pending_client" not in st.session_state:
-    st.session_state.pending_client = None
-if "pending_intent" not in st.session_state:
-    st.session_state.pending_intent = None
-if "last_count_result" not in st.session_state:
-    st.session_state.last_count_result = None
-if "last_list_type" not in st.session_state:
-    st.session_state.last_list_type = None  # "customer" or "client"
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js';
 
-# ================= HELPERS =================
-def find_client(text):
-    for c in df["client name"].unique():
-        if c.lower() in text:
-            return c
-    return None
+    const wrap = document.getElementById('game-wrap');
+    const hud = document.getElementById('hud');
+    const overlay = document.getElementById('overlay');
 
-def find_country(text):
-    for c in df["country"].unique():
-        if c.lower() in text:
-            return c
-    return None
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x03030a, 20, 80);
 
-def apply_filters(text, base_df):
-    temp = base_df.copy()
-    # REGION
-    for region in ["emea","africa","europe","apac"]:
-        if region in text:
-            temp = temp[temp["regioncode"].str.contains(region, case=False)]
-    # COUNTRY
-    for c in temp["country"].unique():
-        if c.lower() in text:
-            temp = temp[temp["country"].str.lower() == c.lower()]
-            break
-    # PRODUCT
-    if "flexcube" in text:
-        temp = temp[temp["products used"].str.contains("flexcube", case=False)]
-    # DEPLOYMENT
-    if "oci" in text:
-        temp = temp[temp["deployment type"].str.contains("oci", case=False)]
-    if "aws" in text:
-        temp = temp[temp["deployment type"].str.contains("aws", case=False)]
-    return temp
+    const camera = new THREE.PerspectiveCamera(65, wrap.clientWidth / wrap.clientHeight, 0.1, 200);
+    camera.position.set(0, 4.5, 12);
+    camera.lookAt(0, 0, 0);
 
-# ================= CHAT INPUT =================
-query = st.chat_input("Ask anything about clients/customers:")
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x020207, 1);
+    wrap.appendChild(renderer.domElement);
 
-# ================= CHAT LOGIC =================
-if query:
-    st.chat_message("user").write(query)
-    q = query.lower().strip()
-    response = ""
-    result_df = pd.DataFrame()
+    const ambient = new THREE.AmbientLight(0x8090ff, 0.7);
+    scene.add(ambient);
 
-    client = find_client(q)
-    country = find_country(q)
+    const point = new THREE.PointLight(0x55f0ff, 1.3, 40);
+    point.position.set(0, 7, 8);
+    scene.add(point);
 
-    # ---------- VALIDATION ----------
-    valid_clients = [c.lower() for c in df["client name"].unique()]
-    valid_countries = [c.lower() for c in df["country"].unique()]
-    valid_keywords = ["customer","client","product","products","deployment",
-                      "consulting","gsup","support","status","how many","count","region"]
+    const stars = new THREE.Group();
+    const starGeo = new THREE.SphereGeometry(0.03, 5, 5);
+    const starMat = new THREE.MeshBasicMaterial({ color: 0x7ef9ff });
+    for (let i = 0; i < 280; i++) {
+      const s = new THREE.Mesh(starGeo, starMat);
+      s.position.set((Math.random() - 0.5) * 35, Math.random() * 20 - 4, -Math.random() * 90);
+      stars.add(s);
+    }
+    scene.add(stars);
 
-    if not any(word in q for word in valid_clients + valid_countries + valid_keywords):
-        response = "Invalid ask, please make a correct query."
+    const player = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.ConeGeometry(0.45, 1.6, 6),
+      new THREE.MeshStandardMaterial({ color: 0xff66c4, emissive: 0x4f0f34, metalness: 0.2, roughness: 0.5 })
+    );
+    body.rotation.x = Math.PI / 2;
+    player.add(body);
 
-    else:
-        # ---------- FOLLOW-UP COUNTRY (for client contacts) ----------
-        if st.session_state.pending_client and country:
-            client = st.session_state.pending_client
-            intent = st.session_state.pending_intent
-            row = df[
-                (df["client name"] == client) &
-                (df["country"].str.lower() == country.lower())
-            ]
-            if not row.empty:
-                if intent == "consulting":
-                    response = f"The consulting contact for **{client} ({country})** is **{row['consulting contact'].iloc[0]}**."
-                elif intent == "gsup":
-                    response = f"The GSUP contact for **{client} ({country})** is **{row['gsup contact'].iloc[0]}**."
-                elif intent == "status":
-                    response = (
-                        f"**{client} ({country})** current status is "
-                        f"**{row['current status'].iloc[0]}**, "
-                        f"implementation status is **{row['impl status'].iloc[0]}**."
-                    )
-                elif intent == "product":
-                    products = row["products used"].unique()
-                    response = f"**{client} ({country})** is using the following products: {', '.join(products)}."
-                elif intent == "deployment":
-                    deployments = row["deployment type"].unique()
-                    response = f"**{client} ({country})** deployment types: {', '.join(deployments)}."
-            st.session_state.pending_client = None
-            st.session_state.pending_intent = None
+    const wingGeo = new THREE.BoxGeometry(1.3, 0.08, 0.35);
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0x84d8ff, emissive: 0x102c42 });
+    const wings = new THREE.Mesh(wingGeo, wingMat);
+    wings.position.set(0, -0.05, 0.2);
+    player.add(wings);
 
-        # ---------- ATTRIBUTE / PRODUCT LOOKUP ----------
-        elif client and any(k in q for k in ["product","products","deployment","consulting","gsup","support","status"]):
-            rows = df[df["client name"] == client]
-            if country:
-                rows = rows[rows["country"].str.lower() == country.lower()]
+    player.position.set(0, -2.8, 0);
+    scene.add(player);
 
-            if "product" in q or "products" in q:
-                products = rows["products used"].unique()
-                response = f"**{client}** is using the following products: {', '.join(products)}."
-            elif "deployment" in q:
-                deployments = rows["deployment type"].unique()
-                response = f"**{client}** deployment types: {', '.join(deployments)}."
-            elif "consulting" in q:
-                if len(rows["country"].unique()) > 1 and not country:
-                    st.session_state.pending_client = client
-                    st.session_state.pending_intent = "consulting"
-                    response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
-                else:
-                    consulting = rows["consulting contact"].unique()
-                    response = f"**{client}** consulting contact(s): {', '.join(consulting)}."
-            elif "gsup" in q or "support" in q:
-                if len(rows["country"].unique()) > 1 and not country:
-                    st.session_state.pending_client = client
-                    st.session_state.pending_intent = "gsup"
-                    response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
-                else:
-                    gsup = rows["gsup contact"].unique()
-                    response = f"**{client}** GSUP contact(s): {', '.join(gsup)}."
-            elif "status" in q:
-                if len(rows["country"].unique()) > 1 and not country:
-                    st.session_state.pending_client = client
-                    st.session_state.pending_intent = "status"
-                    response = f"**{client}** exists in multiple countries: {', '.join(rows['country'].unique())}. Please specify the country."
-                else:
-                    row = rows.iloc[0]
-                    response = (
-                        f"**{client} ({row['country']})** current status is "
-                        f"**{row['current status']}**, implementation status is **{row['impl status']}**."
-                    )
+    const keys = new Set();
+    const bullets = [];
+    const enemies = [];
+    const sparks = [];
 
-        # ---------- HOW MANY / COUNT ----------
-        elif "how many" in q or "count" in q:
-            temp_df = apply_filters(q, df)
-            if temp_df.empty:
-                response = "No records found matching your criteria."
-            elif "customer" in q:
-                count = temp_df["client name"].nunique()
-                response = f"There are **{count} unique customer(s)** matching your criteria."
-                st.session_state.last_count_result = temp_df[["client name"]].drop_duplicates()
-                st.session_state.last_list_type = "customer"
-            else:  # client / site
-                count = len(temp_df)
-                response = f"There are **{count} client site(s)** matching your criteria."
-                st.session_state.last_count_result = temp_df
-                st.session_state.last_list_type = "client"
+    const maxLevels = 5;
+    const state = {
+      score: 0,
+      lives: 3,
+      level: 1,
+      levelKills: 0,
+      targetKills: 8,
+      enemySpeed: 0.035,
+      enemySpawnMs: 950,
+      bulletCooldown: 0,
+      gameOver: false,
+      win: false,
+      spawnClock: 0,
+      pulseClock: 0,
+    };
 
-        # ---------- FALLBACK ----------
-        else:
-            temp_df = apply_filters(q, df)
-            if not temp_df.empty:
-                response = (
-                    f"I found **{temp_df['client name'].nunique()} unique customer(s)** "
-                    f"and **{len(temp_df)} client site(s)** matching your criteria."
-                )
-                st.session_state.last_count_result = temp_df
-                st.session_state.last_list_type = "client"
-            else:
-                response = "Invalid ask, please make a correct query."
+    function updateHud() {
+      hud.innerHTML = `Score: ${state.score}<br/>Lives: ${state.lives}<br/>Level: ${state.level}/${maxLevels}`;
+    }
 
-    # ================= OUTPUT =================
-    if response:
-        st.chat_message("assistant").write(response)
+    function showOverlay(text, visible = true) {
+      overlay.textContent = text;
+      overlay.style.opacity = visible ? '1' : '0';
+    }
 
-# ---------- SHOW SITES / CUSTOMERS BUTTON ----------
-if st.session_state.last_count_result is not None:
-    show_df = st.session_state.last_count_result.copy()
-    if st.session_state.last_list_type == "client":
-        show_df = show_df[["client name","country","regioncode"]]
-    elif st.session_state.last_list_type == "customer":
-        show_df = show_df[["client name"]].drop_duplicates()
+    function makeEnemy() {
+      const palette = [0xff3366, 0xff7b00, 0xfff200, 0x96ff00, 0x2df7ff];
+      const color = palette[(state.level - 1) % palette.length];
+      const enemy = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.48 + state.level * 0.03, 0),
+        new THREE.MeshStandardMaterial({ color, emissive: color * 0.18, metalness: 0.25, roughness: 0.35 })
+      );
+      enemy.position.set((Math.random() - 0.5) * 10, 3.8, -Math.random() * 6);
+      enemy.userData.spin = (Math.random() * 0.04 + 0.01) * (Math.random() > 0.5 ? 1 : -1);
+      scene.add(enemy);
+      enemies.push(enemy);
+    }
 
-    if st.button(f"Show {st.session_state.last_list_type} list"):
-        st.dataframe(show_df)
-        st.session_state.last_count_result = None
-        st.session_state.last_list_type = None
+    function shoot() {
+      const b = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 0.42, 8),
+        new THREE.MeshBasicMaterial({ color: 0x7ef9ff })
+      );
+      b.rotation.x = Math.PI / 2;
+      b.position.copy(player.position);
+      b.position.y += 0.4;
+      scene.add(b);
+      bullets.push(b);
+    }
+
+    function explode(pos, color = 0xff66c4) {
+      for (let i = 0; i < 10; i++) {
+        const p = new THREE.Mesh(
+          new THREE.SphereGeometry(0.06, 4, 4),
+          new THREE.MeshBasicMaterial({ color })
+        );
+        p.position.copy(pos);
+        p.userData.vx = (Math.random() - 0.5) * 0.24;
+        p.userData.vy = (Math.random() - 0.5) * 0.24;
+        p.userData.vz = (Math.random() - 0.5) * 0.24;
+        p.userData.life = 32;
+        scene.add(p);
+        sparks.push(p);
+      }
+    }
+
+    function removeMesh(arr, i) {
+      scene.remove(arr[i]);
+      arr[i].geometry.dispose();
+      arr[i].material.dispose();
+      arr.splice(i, 1);
+    }
+
+    function levelUp() {
+      if (state.level >= maxLevels) {
+        state.win = true;
+        state.gameOver = true;
+        showOverlay(`YOU WIN!\nFinal Score: ${state.score}\nPress ENTER to play again`);
+        return;
+      }
+
+      state.level += 1;
+      state.levelKills = 0;
+      state.targetKills = 8 + state.level * 2;
+      state.enemySpeed += 0.015;
+      state.enemySpawnMs = Math.max(350, state.enemySpawnMs - 120);
+      showOverlay(`LEVEL ${state.level}`, true);
+      setTimeout(() => {
+        if (!state.gameOver) showOverlay('', false);
+      }, 900);
+      updateHud();
+    }
+
+    function resetGame() {
+      while (bullets.length) removeMesh(bullets, 0);
+      while (enemies.length) removeMesh(enemies, 0);
+      while (sparks.length) removeMesh(sparks, 0);
+      state.score = 0;
+      state.lives = 3;
+      state.level = 1;
+      state.levelKills = 0;
+      state.targetKills = 8;
+      state.enemySpeed = 0.035;
+      state.enemySpawnMs = 950;
+      state.bulletCooldown = 0;
+      state.spawnClock = 0;
+      state.gameOver = false;
+      state.win = false;
+      player.position.x = 0;
+      updateHud();
+      showOverlay('LEVEL 1', true);
+      setTimeout(() => showOverlay('', false), 800);
+    }
+
+    function loseLife() {
+      state.lives -= 1;
+      explode(player.position, 0xff4477);
+      updateHud();
+      if (state.lives <= 0) {
+        state.gameOver = true;
+        showOverlay(`GAME OVER\nScore: ${state.score}\nPress ENTER to retry`);
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+      keys.add(key);
+      if (key === 'enter' && state.gameOver) {
+        resetGame();
+      }
+    });
+
+    document.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+
+    function animate(ts) {
+      requestAnimationFrame(animate);
+
+      const delta = 16;
+      state.pulseClock += delta * 0.001;
+
+      stars.children.forEach((s) => {
+        s.position.z += 0.15 + state.level * 0.02;
+        if (s.position.z > 5) {
+          s.position.z = -90;
+          s.position.x = (Math.random() - 0.5) * 35;
+          s.position.y = Math.random() * 20 - 4;
+        }
+      });
+
+      if (!state.gameOver) {
+        const speed = 0.18;
+        if (keys.has('arrowleft') || keys.has('a')) player.position.x -= speed;
+        if (keys.has('arrowright') || keys.has('d')) player.position.x += speed;
+        player.position.x = Math.max(-5.2, Math.min(5.2, player.position.x));
+
+        state.bulletCooldown -= delta;
+        if ((keys.has(' ') || keys.has('space')) && state.bulletCooldown <= 0) {
+          shoot();
+          state.bulletCooldown = 210;
+        }
+
+        state.spawnClock += delta;
+        if (state.spawnClock >= state.enemySpawnMs) {
+          state.spawnClock = 0;
+          makeEnemy();
+        }
+      }
+
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.position.y += 0.3;
+        if (b.position.y > 6) removeMesh(bullets, i);
+      }
+
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!state.gameOver) {
+          e.position.y -= state.enemySpeed;
+          e.rotation.x += e.userData.spin;
+          e.rotation.y += e.userData.spin * 1.25;
+        }
+
+        if (e.position.y < -3.8) {
+          removeMesh(enemies, i);
+          if (!state.gameOver) loseLife();
+          continue;
+        }
+
+        for (let j = bullets.length - 1; j >= 0; j--) {
+          if (e.position.distanceTo(bullets[j].position) < 0.62) {
+            const hitPos = e.position.clone();
+            removeMesh(enemies, i);
+            removeMesh(bullets, j);
+            explode(hitPos, 0x7ef9ff);
+            state.score += 10 * state.level;
+            state.levelKills += 1;
+            updateHud();
+            if (state.levelKills >= state.targetKills) levelUp();
+            break;
+          }
+        }
+      }
+
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const p = sparks[i];
+        p.position.x += p.userData.vx;
+        p.position.y += p.userData.vy;
+        p.position.z += p.userData.vz;
+        p.userData.life -= 1;
+        p.material.opacity = Math.max(0, p.userData.life / 32);
+        p.material.transparent = true;
+        if (p.userData.life <= 0) removeMesh(sparks, i);
+      }
+
+      point.intensity = 1.1 + Math.sin(state.pulseClock * 2.2) * 0.2;
+      player.rotation.z = Math.sin(state.pulseClock * 6) * 0.03;
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = wrap.clientWidth / wrap.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    });
+
+    showOverlay('LEVEL 1', true);
+    setTimeout(() => showOverlay('', false), 800);
+    animate();
+  </script>
+</body>
+</html>
+    """,
+    height=760,
+)
